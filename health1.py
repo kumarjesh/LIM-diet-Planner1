@@ -6,9 +6,6 @@ import streamlit as st
 import os
 import google.generativeai as genai
 from PIL import Image
-from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, WebRtcMode
-import cv2
-import numpy as np
 from io import BytesIO
 
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
@@ -43,15 +40,6 @@ def input_image_setup(uploaded_file, captured_image_bytes):
     ]
     return image_parts
 
-# A video transformer to capture a single frame
-class FrameCapture(VideoTransformerBase):
-    def __init__(self):
-        self.captured_frame = None
-
-    def transform(self, frame):
-        self.captured_frame = frame
-        return frame.to_ndarray(format="bgr24")
-
 ## initialize our streamlit app
 st.set_page_config(page_title="Personalized Calories Advisor App")
 
@@ -80,7 +68,6 @@ source = st.radio("Choose image source:", ("Upload an image", "Take a picture"))
 uploaded_file = None
 captured_image_bytes = None
 image = None
-webrtc_ctx = None
 
 if source == "Upload an image":
     uploaded_file = st.file_uploader("Choose an image of your meal...", type=["jpg", "jpeg", "png"])
@@ -91,31 +78,11 @@ if source == "Upload an image":
         except Exception as e:
             st.error(f"Error loading image: {e}")
 else:  # Take a picture
-    webrtc_ctx = webrtc_streamer(
-        key="meal-photo",
-        mode=WebRtcMode.SENDRECV,
-        video_transformer_factory=FrameCapture,
-        media_stream_constraints={"video": True, "audio": False},
-        async_transform=True,
-    )
-
-    if webrtc_ctx.video_transformer and st.button("Capture Photo"):
-        if webrtc_ctx.video_transformer.captured_frame:
-            frame_ndarray = webrtc_ctx.video_transformer.captured_frame.to_ndarray(format="bgr24")
-            img_rgb = cv2.cvtColor(frame_ndarray, cv2.COLOR_BGR2RGB)
-            pil_img = Image.fromarray(img_rgb)
-            
-            buf = BytesIO()
-            pil_img.save(buf, format="JPEG")
-            captured_image_bytes = buf.getvalue()
-            
-            st.image(pil_img, caption="Captured Meal Image.", use_column_width=True)
-            st.session_state['captured_image'] = captured_image_bytes
-        else:
-            st.warning("Waiting for video stream to start... please try again.")
-
-if 'captured_image' in st.session_state and source == "Take a picture":
-    captured_image_bytes = st.session_state['captured_image']
+    captured_image = st.camera_input("Take a picture of your meal")
+    if captured_image:
+        captured_image_bytes = captured_image.getvalue()
+        # Optionally display the captured image
+        st.image(captured_image, caption="Captured Meal Image.", use_column_width=True)
 
 submit = st.button("Get My Personalized Plan")
 
@@ -140,12 +107,12 @@ if submit:
             - Health Goal: {health_goal}
 
             Structure your response in two parts:
-            1.  **Meal Analysis & Calories:**
+            1. **Meal Analysis & Calories:**
                 - Item 1 - no of calories
                 - Item 2 - no of calories
                 - ...
                 - Total Estimated Calories: [Total]
-            2.  **Personalized Recommendation:**
+            2. **Personalized Recommendation:**
                 - Provide a short summary of the user's estimated daily calorie needs based on their details and goal.
                 - Give practical advice on how to adjust their diet (e.g., portion sizes, food types).
                 - Suggest a simple exercise plan to help them achieve their goal.
